@@ -9,12 +9,15 @@ local TreasureQuickstart = RegisterMod("Treasure QuickStart", 1)	-- Register mod
 function TreasureQuickstart:start()
 	local player = Isaac.GetPlayer()
 	local level = Game():GetLevel()
+
+	-- Room type to search for, as set by the MCM
 	local roomType = (TreasureQuickstart.settings.mode == 1) and RoomType.ROOM_TREASURE or RoomType.ROOM_PLANETARIUM
+	-- If current run is a challenge
+	local isChallenge = (Isaac.GetChallenge() ~= 0) and true or false
+	-- If current run is a custom seed
+	local isSeeded = (Isaac.GetChallenge() == 0 and Game():GetSeeds():IsCustomRun()) and true or false
 
-	local isChallenge = (Isaac.GetChallenge() ~= 0) and true or false	-- If current run is a challenge
-	local isSeeded = (Isaac.GetChallenge() == 0 and Game():GetSeeds():IsCustomRun()) and true or false		-- If current run is a custom seed
-
-	-- Check if current floor has a treasure room
+	-- Check if current floor has a room of a certain type
 	local function hasRoom(level, type)
 		local rooms = Game():GetLevel():GetRooms()
 		for i = 0, #rooms - 1 do
@@ -38,10 +41,10 @@ function TreasureQuickstart:start()
 			-- Ensure a treasure room is present, then check it's item
 			if hasRoom(level, roomType) then
 				-- Get treasure room index
-				treasureRoomIndex = level:QueryRoomTypeIndex(roomType, false, RNG(), true)
+				itemRoomIndex = level:QueryRoomTypeIndex(roomType, false, RNG(), true)
 				-- Move the player to the treasure room
 				-- This needs to be done before we can check the item, as it is not generated until the player enters the room
-				Game():ChangeRoom(treasureRoomIndex)
+				Game():ChangeRoom(itemRoomIndex)
 
 				local room = Game():GetRoom()
 				local roomEntities = room:GetEntities()
@@ -55,7 +58,7 @@ function TreasureQuickstart:start()
 					end
 				end
 			else
-				-- If no treasure room, then dont try and reseed for one
+				-- Dont end the search if we're looking for a planetarium and one isn't present
 				if roomType == RoomType.ROOM_PLANETARIUM then
 					TreasureQuickstart.endSearch = false
 				else
@@ -159,7 +162,6 @@ local function modConfigMenuInit()
 				Type = ModConfigMenu.OptionType.BOOLEAN,
 				Default = TreasureQuickstart.MCM.enabled.default,
 				Info = { TreasureQuickstart.MCM.enabled.info },
-				-- Color = { 1.0, 1.0, 1.0 },
 				Display = function()
 					return TreasureQuickstart.MCM.enabled.display .. (TreasureQuickstart.settings.enabled and "true" or "false")
 				end,
@@ -188,7 +190,6 @@ local function modConfigMenuInit()
 				Maximum = #TreasureQuickstart.MCM.mode.choices,
 				Default = TreasureQuickstart.MCM.mode.default,
 				Info = { TreasureQuickstart.MCM.mode.info },
-				-- Color = { 1.0, 1.0, 1.0 },
 				Display = function()
 					return TreasureQuickstart.MCM.mode.display .. TreasureQuickstart.MCM.mode.choices[TreasureQuickstart.settings.mode]
 				end,
@@ -214,7 +215,6 @@ local function modConfigMenuInit()
 				Maximum = #TreasureQuickstart.MCM.quality.choices,
 				Default = TreasureQuickstart.MCM.quality.default,
 				Info = { TreasureQuickstart.MCM.quality.info },
-				-- Color = { 1.0, 1.0, 1.0 },
 				Display = function()
 					return TreasureQuickstart.MCM.quality.display .. TreasureQuickstart.MCM.quality.choices[TreasureQuickstart.settings.quality]
 				end,
@@ -238,7 +238,6 @@ local function modConfigMenuInit()
 				Type = ModConfigMenu.OptionType.BOOLEAN,
 				Default = TreasureQuickstart.MCM.challenges.default,
 				Info = { TreasureQuickstart.MCM.challenges.info },
-				-- Color = { 1.0, 1.0, 1.0 },
 				Display = function()
 					return TreasureQuickstart.MCM.challenges.display .. (TreasureQuickstart.settings.challenges and "true" or "false")
 				end,
