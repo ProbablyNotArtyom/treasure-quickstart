@@ -39,7 +39,10 @@ function TreasureQuickstart:start()
 
 		-- Ensure a treasure room is present, then check it's item
 		if hasTreasureRoom(level) then
-			if not hasCurse(LevelCurse.CURSE_OF_MAZE) and not hasCurse(LevelCurse.CURSE_OF_BLIND) then
+			-- Skip over incompatible curses if enabled
+			if hasCurse(LevelCurse.CURSE_OF_MAZE) and TreasureQuickstart.settings.curses == false then
+				TreasureQuickstart.itemFound = true
+			else
 				-- Get treasure room index
 				treasureRoomIndex = level:QueryRoomTypeIndex(RoomType.ROOM_TREASURE, false, RNG(), true)
 				-- Move the player to the treasure room
@@ -57,8 +60,6 @@ function TreasureQuickstart:start()
 						TreasureQuickstart.itemFound = item.Quality >= (TreasureQuickstart.settings.quality - 1) and true or false
 					end
 				end
-			else
-				TreasureQuickstart.itemFound = false
 			end
 		else
 			-- If no treasure room, then dont try and reseed for one
@@ -83,15 +84,27 @@ end
 -- UI definitions
 TreasureQuickstart.MCM = {
 	enabled = {
-		default = true
+		default = true,
+		info = "Enable or disable the mod",
+		display = "Enabled: "
 	},
 
 	challenges = {
-		default = true
+		default = true,
+		info = "Enable or disable treasure filtering in challenges",
+		display = "Enable in challenges: "
+	},
+
+	curses = {
+		default = true,
+		info = "Skips Curse of the Maze. When false, the mod will stop on this curse instead of reseeding due to API limitations.",
+		display = "Skip incompatible curses: "
 	},
 
 	quality = {
 		default = 4,	-- Quality 3 by default
+		info = "Filter out items below this quality",
+		display = "Minimum Quality: ",
 		choices = {
 			"Q0",
 			"Q1",
@@ -106,7 +119,8 @@ TreasureQuickstart.MCM = {
 TreasureQuickstart.settings = {
 	enabled = TreasureQuickstart.MCM.enabled.default,
 	quality = TreasureQuickstart.MCM.quality.default,
-	challenges = TreasureQuickstart.MCM.challenges.default
+	challenges = TreasureQuickstart.MCM.challenges.default,
+	curses = TreasureQuickstart.MCM.curses.default
 }
 
 -- Save persistent data
@@ -142,10 +156,10 @@ local function modConfigMenuInit()
 			{
 				Type = ModConfigMenu.OptionType.BOOLEAN,
 				Default = TreasureQuickstart.MCM.enabled.default,
-				Info = { "Enable or disable the mod" },
+				Info = { TreasureQuickstart.MCM.enabled.info },
 				-- Color = { 1.0, 1.0, 1.0 },
 				Display = function()
-					return "Enabled: " .. (TreasureQuickstart.settings.enabled and "true" or "false")
+					return TreasureQuickstart.MCM.enabled.display .. (TreasureQuickstart.settings.enabled and "true" or "false")
 				end,
 
 				OnChange = function(v)
@@ -171,10 +185,10 @@ local function modConfigMenuInit()
 				Minimum = 1,
 				Maximum = #TreasureQuickstart.MCM.quality.choices,
 				Default = TreasureQuickstart.MCM.quality.default,
-				Info = { "Filter out items below this quality" },
+				Info = { TreasureQuickstart.MCM.quality.info },
 				-- Color = { 1.0, 1.0, 1.0 },
 				Display = function()
-					return "Minimum Quality: " .. TreasureQuickstart.MCM.quality.choices[TreasureQuickstart.settings.quality]
+					return TreasureQuickstart.MCM.quality.display .. TreasureQuickstart.MCM.quality.choices[TreasureQuickstart.settings.quality]
 				end,
 
 				OnChange = function(v)
@@ -195,10 +209,10 @@ local function modConfigMenuInit()
 			{
 				Type = ModConfigMenu.OptionType.BOOLEAN,
 				Default = TreasureQuickstart.MCM.challenges.default,
-				Info = { "Enable or disable treasure filtering in challenges" },
+				Info = { TreasureQuickstart.MCM.challenges.info },
 				-- Color = { 1.0, 1.0, 1.0 },
 				Display = function()
-					return "Enable in challenges: " .. (TreasureQuickstart.settings.challenges and "true" or "false")
+					return TreasureQuickstart.MCM.challenges.display .. (TreasureQuickstart.settings.challenges and "true" or "false")
 				end,
 
 				OnChange = function(v)
@@ -208,6 +222,30 @@ local function modConfigMenuInit()
 
 				CurrentSetting = function()
 					return TreasureQuickstart.settings.challenges
+				end
+			}
+		)
+
+		-- ENTRY: Disable incompatible curses
+		ModConfigMenu.AddSetting(
+			"Treasure QuickStart",
+			nil,
+			{
+				Type = ModConfigMenu.OptionType.BOOLEAN,
+				Default = TreasureQuickstart.MCM.curses.default,
+				Info = { TreasureQuickstart.MCM.curses.info },
+				-- Color = { 1.0, 1.0, 1.0 },
+				Display = function()
+					return TreasureQuickstart.MCM.curses.display .. (TreasureQuickstart.settings.curses and "true" or "false")
+				end,
+
+				OnChange = function(v)
+					TreasureQuickstart.settings.curses = v
+					TreasureQuickstart:save()
+				end,
+
+				CurrentSetting = function()
+					return TreasureQuickstart.settings.curses
 				end
 			}
 		)
