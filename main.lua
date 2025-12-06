@@ -10,12 +10,11 @@ function TreasureQuickstart:start()
 	local player = Isaac.GetPlayer()
 	local level = Game():GetLevel()
 
-	-- Check if current level has a treasure room
+	-- Check if current floor has a treasure room
 	local function hasTreasureRoom(level)
-		local rooms = level:GetRooms()
+		local rooms = Game():GetLevel():GetRooms()
 		for i = 0, #rooms - 1 do
-			local room = rooms:Get(i)
-			if (room.Data.Type == RoomType.ROOM_TREASURE) then
+			if (rooms:Get(i).Data.Type == RoomType.ROOM_TREASURE) then
 				return true
 			end
 		end
@@ -23,7 +22,7 @@ function TreasureQuickstart:start()
 		return false
 	end
 
-	-- Check if current level has a curse
+	-- Check if current floor has a curse
 	local function hasCurse(curse)
 		local currentCurses = Game():GetLevel():GetCurses()
 		return (currentCurses & curse) == curse
@@ -70,6 +69,9 @@ end
 
 -- Callback for MC_POST_RENDER
 function TreasureQuickstart:restart()
+	-- Restart the run until an item is found
+	-- This is always run after the start() callback, which sets itemFound appropriately
+	-- Restarting only once a frame prevents the game from crashing from reseeding too quickly
 	if TreasureQuickstart.itemFound == false then
 		Isaac.ExecuteCommand("restart")
 	end
@@ -78,7 +80,7 @@ end
 -------------------------------------------------------------------------------------------------
 -- MOD CONFIG MENU
 
---
+-- UI definitions
 TreasureQuickstart.MCM = {
 	enabled = {
 		default = true
@@ -107,11 +109,13 @@ TreasureQuickstart.settings = {
 	challenges = TreasureQuickstart.MCM.challenges.default
 }
 
+-- Save persistent data
 function TreasureQuickstart:save()
 	local jsonString = json.encode(TreasureQuickstart.settings)
 	TreasureQuickstart:SaveData(jsonString)
 end
 
+-- Load persistent data
 function TreasureQuickstart:load()
 	if not TreasureQuickstart:HasData() then
 		return
@@ -121,94 +125,93 @@ function TreasureQuickstart:load()
 	TreasureQuickstart.settings = json.decode(jsonString)
 end
 
+-- Init the MCM page
 local function modConfigMenuInit()
-	if ModConfigMenu == nil then
-		return
+	if ModConfigMenu ~= nil then
+		-- Remove the category to prevent duplicate entries when reloading live
+		ModConfigMenu.RemoveCategory("Treasure QuickStart")
+
+		-- TITLE
+		ModConfigMenu.AddTitle("Treasure QuickStart", nil, "Settings")
+		ModConfigMenu.AddText("Treasure QuickStart", nil, "------------------------")
+
+		-- ENTRY: Toggle mod enable
+		ModConfigMenu.AddSetting(
+			"Treasure QuickStart",
+			nil,
+			{
+				Type = ModConfigMenu.OptionType.BOOLEAN,
+				Default = TreasureQuickstart.MCM.enabled.default,
+				Info = { "Enable or disable the mod" },
+				-- Color = { 1.0, 1.0, 1.0 },
+				Display = function()
+					return "Enabled: " .. (TreasureQuickstart.settings.enabled and "true" or "false")
+				end,
+
+				OnChange = function(v)
+					TreasureQuickstart.settings.enabled = v
+					TreasureQuickstart:save()
+				end,
+
+				CurrentSetting = function()
+					return TreasureQuickstart.settings.enabled
+				end
+			}
+		)
+
+		-- SPACER
+		ModConfigMenu.AddSpace("Treasure QuickStart", nil)
+
+		-- ENTRY: Minimum quality setting
+		ModConfigMenu.AddSetting(
+			"Treasure QuickStart",
+			nil,
+			{
+				Type = ModConfigMenu.OptionType.NUMBER,
+				Minimum = 1,
+				Maximum = #TreasureQuickstart.MCM.quality.choices,
+				Default = TreasureQuickstart.MCM.quality.default,
+				Info = { "Filter out items below this quality" },
+				-- Color = { 1.0, 1.0, 1.0 },
+				Display = function()
+					return "Minimum Quality: " .. TreasureQuickstart.MCM.quality.choices[TreasureQuickstart.settings.quality]
+				end,
+
+				OnChange = function(v)
+					TreasureQuickstart.settings.quality = v
+					TreasureQuickstart:save()
+				end,
+
+				CurrentSetting = function()
+					return TreasureQuickstart.settings.quality
+				end
+			}
+		)
+
+		-- ENTRY: Enable in challenges
+		ModConfigMenu.AddSetting(
+			"Treasure QuickStart",
+			nil,
+			{
+				Type = ModConfigMenu.OptionType.BOOLEAN,
+				Default = TreasureQuickstart.MCM.challenges.default,
+				Info = { "Enable or disable treasure filtering in challenges" },
+				-- Color = { 1.0, 1.0, 1.0 },
+				Display = function()
+					return "Enable in challenges: " .. (TreasureQuickstart.settings.challenges and "true" or "false")
+				end,
+
+				OnChange = function(v)
+					TreasureQuickstart.settings.challenges = v
+					TreasureQuickstart:save()
+				end,
+
+				CurrentSetting = function()
+					return TreasureQuickstart.settings.challenges
+				end
+			}
+		)
 	end
-
-	-- Remove the category to prevent duplicate entries when reloading live
-	ModConfigMenu.RemoveCategory("Treasure QuickStart")
-
-	-- TITLE
-	ModConfigMenu.AddTitle("Treasure QuickStart", nil, "Settings")
-	ModConfigMenu.AddText("Treasure QuickStart", nil, "------------------------")
-
-	-- ENTRY: Toggle mod enable
-	ModConfigMenu.AddSetting(
-		"Treasure QuickStart",
-		nil,
-		{
-			Type = ModConfigMenu.OptionType.BOOLEAN,
-			Default = TreasureQuickstart.MCM.enabled.default,
-			Info = { "Enable or disable the mod" },
-			-- Color = { 1.0, 1.0, 1.0 },
-			Display = function()
-				return "Enabled: " .. (TreasureQuickstart.settings.enabled and "true" or "false")
-			end,
-
-			OnChange = function(v)
-				TreasureQuickstart.settings.enabled = v
-				TreasureQuickstart:save()
-			end,
-
-			CurrentSetting = function()
-				return TreasureQuickstart.settings.enabled
-			end
-		}
-	)
-
-	-- SPACER
-	ModConfigMenu.AddSpace("Treasure QuickStart", nil)
-
-	-- ENTRY: Minimum quality setting
-	ModConfigMenu.AddSetting(
-		"Treasure QuickStart",
-		nil,
-		{
-			Type = ModConfigMenu.OptionType.NUMBER,
-			Minimum = 1,
-			Maximum = #TreasureQuickstart.MCM.quality.choices,
-			Default = TreasureQuickstart.MCM.quality.default,
-			Info = { "Filter out items below this quality" },
-			-- Color = { 1.0, 1.0, 1.0 },
-			Display = function()
-				return "Minimum Quality: " .. TreasureQuickstart.MCM.quality.choices[TreasureQuickstart.settings.quality]
-			end,
-
-			OnChange = function(v)
-				TreasureQuickstart.settings.quality = v
-				TreasureQuickstart:save()
-			end,
-
-			CurrentSetting = function()
-				return TreasureQuickstart.settings.quality
-			end
-		}
-	)
-
-	-- ENTRY: Enable in challenges
-	ModConfigMenu.AddSetting(
-		"Treasure QuickStart",
-		nil,
-		{
-			Type = ModConfigMenu.OptionType.BOOLEAN,
-			Default = TreasureQuickstart.MCM.challenges.default,
-			Info = { "Enable or disable treasure filtering in challenges" },
-			-- Color = { 1.0, 1.0, 1.0 },
-			Display = function()
-				return "Enable in challenges: " .. (TreasureQuickstart.settings.challenges and "true" or "false")
-			end,
-
-			OnChange = function(v)
-				TreasureQuickstart.settings.challenges = v
-				TreasureQuickstart:save()
-			end,
-
-			CurrentSetting = function()
-				return TreasureQuickstart.settings.challenges
-			end
-		}
-	)
 end
 
 -------------------------------------------------------------------------------------------------
