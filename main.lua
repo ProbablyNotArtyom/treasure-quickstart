@@ -9,12 +9,16 @@ local TreasureQuickstart = RegisterMod("Treasure QuickStart", 1)	-- Register mod
 function TreasureQuickstart:start()
 	local player = Isaac.GetPlayer()
 	local level = Game():GetLevel()
+	local roomType = (TreasureQuickstart.settings.mode == 1) and RoomType.ROOM_TREASURE or RoomType.ROOM_PLANETARIUM
+
+	local isChallenge = (Isaac.GetChallenge() ~= 0) and true or false	-- If current run is a challenge
+	local isSeeded = (Isaac.GetChallenge() == 0 and Game():GetSeeds():IsCustomRun()) and true or false		-- If current run is a custom seed
 
 	-- Check if current floor has a treasure room
-	local function hasTreasureRoom(level)
+	local function hasRoom(level, type)
 		local rooms = Game():GetLevel():GetRooms()
 		for i = 0, #rooms - 1 do
-			if (rooms:Get(i).Data.Type == RoomType.ROOM_TREASURE) then
+			if (rooms:Get(i).Data.Type == type) then
 				return true
 			end
 		end
@@ -22,29 +26,19 @@ function TreasureQuickstart:start()
 		return false
 	end
 
-	-- Check if current floor has a curse
-	local function hasCurse(curse)
-		local currentCurses = Game():GetLevel():GetCurses()
-		return (currentCurses & curse) == curse
-	end
-
-	if TreasureQuickstart.settings.enabled == true and					-- If mod is enabled through MCM
+	if TreasureQuickstart.settings.enabled == true and						-- If mod is enabled through MCM
+	isSeeded == false and													-- If not a seeded run
 	level:GetStartingRoomIndex() == level:GetCurrentRoomIndex() and			-- If player is in starting room
 	level:GetStage() == LevelStage.STAGE1_1 and								-- If floor 1
 	player:HasCollectible(CollectibleType.COLLECTIBLE_R_KEY) == false then	-- If player has not used the "R key" item
 		-- Check if the current run is a challenge and if we should enable for them
-		if Isaac.GetChallenge() ~= 0 and TreasureQuickstart.settings.challenges == false then
-			TreasureQuickstart.itemFound = true
-		end
-
-		-- Ensure a treasure room is present, then check it's item
-		if hasTreasureRoom(level) then
-			-- Skip over incompatible curses if enabled
-			if hasCurse(LevelCurse.CURSE_OF_MAZE) and TreasureQuickstart.settings.curses == false then
-				TreasureQuickstart.itemFound = true
-			else
+		if isChallenge and TreasureQuickstart.settings.challenges == false then
+			TreasureQuickstart.endSearch = true
+		else
+			-- Ensure a treasure room is present, then check it's item
+			if hasRoom(level, roomType) then
 				-- Get treasure room index
-				treasureRoomIndex = level:QueryRoomTypeIndex(RoomType.ROOM_TREASURE, false, RNG(), true)
+				treasureRoomIndex = level:QueryRoomTypeIndex(roomType, false, RNG(), true)
 				-- Move the player to the treasure room
 				-- This needs to be done before we can check the item, as it is not generated until the player enters the room
 				Game():ChangeRoom(treasureRoomIndex)
@@ -57,13 +51,17 @@ function TreasureQuickstart:start()
 					local entity = roomEntities:Get(i)
 					if (entity.Type == EntityType.ENTITY_PICKUP and entity.Variant == PickupVariant.PICKUP_COLLECTIBLE) then
 						local item = Isaac.GetItemConfig():GetCollectible(entity.SubType)
-						TreasureQuickstart.itemFound = item.Quality >= (TreasureQuickstart.settings.quality - 1) and true or false
+						TreasureQuickstart.endSearch = item.Quality >= (TreasureQuickstart.settings.quality - 1) and true or false
 					end
 				end
+			else
+				-- If no treasure room, then dont try and reseed for one
+				if roomType == RoomType.ROOM_PLANETARIUM then
+					TreasureQuickstart.endSearch = false
+				else
+					TreasureQuickstart.endSearch = true
+				end
 			end
-		else
-			-- If no treasure room, then dont try and reseed for one
-			TreasureQuickstart.itemFound = true
 		end
 	end
 end
@@ -71,9 +69,9 @@ end
 -- Callback for MC_POST_RENDER
 function TreasureQuickstart:restart()
 	-- Restart the run until an item is found
-	-- This is always run after the start() callback, which sets itemFound appropriately
+	-- This is always run after the start() callback, which sets endSearch appropriately
 	-- Restarting only once a frame prevents the game from crashing from reseeding too quickly
-	if TreasureQuickstart.itemFound == false then
+	if TreasureQuickstart.endSearch == false then
 		Isaac.ExecuteCommand("restart")
 	end
 end
@@ -90,15 +88,9 @@ TreasureQuickstart.MCM = {
 	},
 
 	challenges = {
-		default = true,
+		default = false,
 		info = "Enable or disable treasure filtering in challenges",
 		display = "Enable in challenges: "
-	},
-
-	curses = {
-		default = true,
-		info = "Skips Curse of the Maze. When false, the mod will stop on this curse instead of reseeding due to API limitations.",
-		display = "Skip incompatible curses: "
 	},
 
 	quality = {
@@ -112,15 +104,25 @@ TreasureQuickstart.MCM = {
 			"Q3",
 			"Q4"
 		}
+	},
+
+	mode = {
+		default = 1,	-- Treasure rooms by default
+		info = "Type of item room to search for. Planetariums can take a while to find.",
+		display = "Room type: ",
+		choices = {
+			"Treasure",
+			"Planetarium"
+		}
 	}
 }
 
 -- Settings value table, used and populated by MCM
 TreasureQuickstart.settings = {
+	mode = TreasureQuickstart.MCM.mode.default,
 	enabled = TreasureQuickstart.MCM.enabled.default,
 	quality = TreasureQuickstart.MCM.quality.default,
-	challenges = TreasureQuickstart.MCM.challenges.default,
-	curses = TreasureQuickstart.MCM.curses.default
+	challenges = TreasureQuickstart.MCM.challenges.default
 }
 
 -- Save persistent data
@@ -176,6 +178,32 @@ local function modConfigMenuInit()
 		-- SPACER
 		ModConfigMenu.AddSpace("Treasure QuickStart", nil)
 
+		-- ENTRY: Mode setting
+		ModConfigMenu.AddSetting(
+			"Treasure QuickStart",
+			nil,
+			{
+				Type = ModConfigMenu.OptionType.NUMBER,
+				Minimum = 1,
+				Maximum = #TreasureQuickstart.MCM.mode.choices,
+				Default = TreasureQuickstart.MCM.mode.default,
+				Info = { TreasureQuickstart.MCM.mode.info },
+				-- Color = { 1.0, 1.0, 1.0 },
+				Display = function()
+					return TreasureQuickstart.MCM.mode.display .. TreasureQuickstart.MCM.mode.choices[TreasureQuickstart.settings.mode]
+				end,
+
+				OnChange = function(v)
+					TreasureQuickstart.settings.mode = v
+					TreasureQuickstart:save()
+				end,
+
+				CurrentSetting = function()
+					return TreasureQuickstart.settings.mode
+				end
+			}
+		)
+
 		-- ENTRY: Minimum quality setting
 		ModConfigMenu.AddSetting(
 			"Treasure QuickStart",
@@ -222,30 +250,6 @@ local function modConfigMenuInit()
 
 				CurrentSetting = function()
 					return TreasureQuickstart.settings.challenges
-				end
-			}
-		)
-
-		-- ENTRY: Disable incompatible curses
-		ModConfigMenu.AddSetting(
-			"Treasure QuickStart",
-			nil,
-			{
-				Type = ModConfigMenu.OptionType.BOOLEAN,
-				Default = TreasureQuickstart.MCM.curses.default,
-				Info = { TreasureQuickstart.MCM.curses.info },
-				-- Color = { 1.0, 1.0, 1.0 },
-				Display = function()
-					return TreasureQuickstart.MCM.curses.display .. (TreasureQuickstart.settings.curses and "true" or "false")
-				end,
-
-				OnChange = function(v)
-					TreasureQuickstart.settings.curses = v
-					TreasureQuickstart:save()
-				end,
-
-				CurrentSetting = function()
-					return TreasureQuickstart.settings.curses
 				end
 			}
 		)
